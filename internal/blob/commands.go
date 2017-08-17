@@ -6,21 +6,17 @@ import (
 )
 
 type Command struct {
-	aggregateID    ID
+	ID
 	commandType    string
-	eventGenerator func(Blob) []Event
+	eventGenerator func(Blob) []EventWithMetadata
 	validator      func(Blob) error
 }
 
-func (c Command) GenerateEvents(b Blob) ([]Event, CommandError) {
+func (c Command) GenerateEvents(b Blob) ([]EventWithMetadata, CommandError) {
 	if err := c.validator(b); err != nil {
 		return nil, err
 	}
 	return c.eventGenerator(b), nil
-}
-
-func (c Command) AggregateID() string {
-	return c.aggregateID.AggregateID()
 }
 
 func (c Command) CommandType() string {
@@ -44,7 +40,7 @@ func (ce commandError) Error() string {
 
 func CreateCommand(aggregateID ID, blobType BlobType, data []byte) Command {
 	return Command{
-		aggregateID: aggregateID,
+		ID:          aggregateID,
 		commandType: "CREATE",
 		validator: func(b Blob) error {
 			if b.Deleted {
@@ -61,38 +57,85 @@ func CreateCommand(aggregateID ID, blobType BlobType, data []byte) Command {
 			}
 			return nil
 		},
-		eventGenerator: func(b Blob) []Event {
-			return []Event{CreatedEvent{ID: aggregateID, BlobType: blobType, Data: data, Sequence: 1}}
+		eventGenerator: func(b Blob) []EventWithMetadata {
+			return wrap(aggregateID, 1, CreatedEvent{BlobType: blobType, Data: data})
 		},
 	}
 }
 
-func UpdateCommand(aggregateID ID, data []byte) Command {
+func UpdateCommand(aggregateID ID, updatedData []byte, clearData bool, tagsToAddOrUpdate Tags, tagsToDelete []string) Command {
 	return Command{
-		aggregateID: aggregateID,
+		ID:          aggregateID,
 		commandType: "UPDATE",
 		validator: func(b Blob) error {
-
+			if aggregateID == "" {
+				return errors.New("ID should not be empty")
+			}
+			if b.ID != aggregateID {
+				return fmt.Errorf("ID %s in blob does not match %s in command", b.ID, aggregateID)
+			}
+			if len(updatedData) != 0 && clearData {
+				return errors.New("cannot updated as well as clear data at the same time")
+			}
+			for _, tagToDelete := range tagsToDelete {
+				if _, ok := tagsToAddOrUpdate[tagToDelete]; ok {
+					return fmt.Errorf("cannot delete a tag %v as it is being updated at the same time", tagsToDelete)
+				}
+			}
 			return nil
 		},
-		eventGenerator: func(b Blob) []Event {
-			return []Event{UpdatedEvent{ID: aggregateID, Data: data, Sequence: b.Sequence + 1}}
+		eventGenerator: func(b Blob) []EventWithMetadata {
+			var events []Event
+
+			if len(updatedData) != 0 && !clearData {
+				events = append(events, DataUpdatedEvent{Data: updatedData})
+			}
+			if clearData {
+				events = append(events, DataUpdatedEvent{Data: nil})
+			}
+			if len(tagsToDelete) != 0 {
+				events = append(events, TagsDeletedEvent(tagsToDelete))
+			}
+			if len(tagsToAddOrUpdate) != 0 {
+				tagsToAdd := make(Tags)
+				tagsToUpdate := make(Tags)
+
+				for key, value := range tagsToAddOrUpdate {
+					if _, ok := b.Tags[key]; ok {
+						tagsToUpdate[key] = value
+					} else {
+						tagsToAdd[key] = value
+					}
+				}
+
+				if len(tagsToUpdate) != 0 {
+					events = append(events, TagsUpdatedEvent(tagsToUpdate))
+				}
+				if len(tagsToAdd) != 0 {
+					events = append(events, TagsAddedEvent(tagsToAdd))
+				}
+			}
+
+			return wrap(aggregateID, b.Sequence+1, events...)
 		},
 	}
 }
 
 func DeleteCommand(aggregateID ID) Command {
 	return Command{
-		aggregateID: aggregateID,
+		ID:          aggregateID,
 		commandType: "DELETE",
 		validator: func(b Blob) error {
+			if aggregateID == "" {
+				return errors.New("AggregateID should not be empty")
+			}
 			if b.ID != aggregateID {
-				return fmt.Errorf("BID %s does not match the BID in DeleteCommand %s", b.ID, aggregateID)
+				return fmt.Errorf("AggregateID %s in blob does not match %s in command", b.ID, aggregateID)
 			}
 			return nil
 		},
-		eventGenerator: func(b Blob) []Event {
-			return []Event{DeletedEvent{ID: aggregateID, Sequence: b.Sequence + 1}}
+		eventGenerator: func(b Blob) []EventWithMetadata {
+			return wrap(aggregateID, b.Sequence+1, DeletedEvent{})
 		},
 	}
 }

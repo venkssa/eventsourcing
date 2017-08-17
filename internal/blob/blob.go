@@ -2,11 +2,13 @@ package blob
 
 type ID string
 
-func (id ID) AggregateID() string {
-	return string(id)
-}
+type Tags map[string]string
 
 type BlobType string
+
+func (bt BlobType) String() string {
+	return string(bt)
+}
 
 type Blob struct {
 	ID
@@ -14,4 +16,5 @@ type Blob struct {
 	Data     []byte
 	Deleted  bool
 	Sequence uint64
+	Tags
 }

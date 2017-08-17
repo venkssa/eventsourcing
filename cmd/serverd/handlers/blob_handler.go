@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 
 	"github.com/gorilla/mux"
@@ -13,24 +14,45 @@ import (
 
 type BlobHandler struct {
 	HandlerRegisterFunc
-	logger        log.Logger
 	aggregateRepo blob.AggregateRepository
 }
 
 func NewBlobHandler(logger log.Logger, aggregateRepo blob.AggregateRepository) HandlerRegisterer {
-	hdlr := &BlobHandler{logger: logger, aggregateRepo: aggregateRepo}
+	hdlr := &BlobHandler{aggregateRepo: aggregateRepo}
 	hdlr.HandlerRegisterFunc = HandlerRegisterFunc(func(muxRouter *mux.Router) {
+		muxRouter.Path("/blob/{id}/data").Methods(http.MethodGet).HandlerFunc(withErrorHandler(logger, hdlr.Data))
+
 		sr := muxRouter.Path("/blob/{id}").Subrouter()
-		sr.Methods(http.MethodGet).HandlerFunc(hdlr.Find)
-		sr.Methods(http.MethodPost).HandlerFunc(hdlr.Create)
-		sr.Methods(http.MethodDelete).HandlerFunc(hdlr.Delete)
+		sr.Methods(http.MethodGet).HandlerFunc(withErrorHandler(logger, hdlr.Find))
+		sr.Methods(http.MethodPost).HandlerFunc(withErrorHandler(logger, hdlr.Create))
+		sr.Methods(http.MethodPut).HandlerFunc(withErrorHandler(logger, hdlr.Update))
+		sr.Methods(http.MethodDelete).HandlerFunc(withErrorHandler(logger, hdlr.Delete))
 	})
 	return hdlr
 }
 
-func (bh *BlobHandler) Find(rw http.ResponseWriter, req *http.Request) {
+func (bh *BlobHandler) Data(rw http.ResponseWriter, req *http.Request) error {
 	vars := mux.Vars(req)
-	blb, err := bh.aggregateRepo.Find(vars["id"])
+	blb, err := bh.aggregateRepo.Find(blob.ID(vars["id"]))
+	if err != nil {
+		return notFoundError(err)
+	}
+
+	rw.Header().Set("Content-Type", blb.BlobType.String())
+	rw.WriteHeader(http.StatusOK)
+	_, err = rw.Write(blb.Data)
+	if err != nil {
+		return internalServerError(err)
+	}
+	return nil
+}
+
+func (bh *BlobHandler) Find(rw http.ResponseWriter, req *http.Request) error {
+	vars := mux.Vars(req)
+	blb, err := bh.aggregateRepo.Find(blob.ID(vars["id"]))
+	if err != nil {
+		return notFoundError(err)
+	}
 
 	b := struct {
 		blob.ID       `json:"id"`
@@ -38,50 +60,56 @@ func (bh *BlobHandler) Find(rw http.ResponseWriter, req *http.Request) {
 		Data          []byte `json:"data"`
 		Deleted       bool   `json:"deleted"`
 		Sequence      uint64 `json:"sequence"`
+		blob.Tags     `json:"tags"`
 	}(blb)
 
-	WriteJSON(bh.logger, rw, b, err)
+	return OkJSON(rw, b)
 }
 
-func (bh *BlobHandler) Create(rw http.ResponseWriter, req *http.Request) {
+func (bh *BlobHandler) Create(rw http.ResponseWriter, req *http.Request) error {
 	vars := mux.Vars(req)
-	var createReq struct {
-		Data     []byte        `json:"data"`
-		BlobType blob.BlobType `json:"blobType"`
+	blobType := req.Header.Get("Content-Type")
+	if blobType == "" {
+		return notFoundError(errors.New("Content-Type not set"))
 	}
-	err := json.NewDecoder(req.Body).Decode(&createReq)
+	data, err := ioutil.ReadAll(req.Body)
 	if err != nil {
-		ErrorJSON(bh.logger, rw, errors.New("failed to decode response body"), http.StatusBadRequest)
-		return
+		return notFoundError(err)
 	}
 
-	cmd := blob.CreateCommand(blob.ID(vars["id"]), createReq.BlobType, createReq.Data)
-	bh.process(cmd, rw)
+	cmd := blob.CreateCommand(blob.ID(vars["id"]), blob.BlobType(blobType), data)
+	return bh.process(cmd, rw)
 }
 
-func (bh *BlobHandler) Update(rw http.ResponseWriter, req *http.Request) {
+func (bh *BlobHandler) Update(rw http.ResponseWriter, req *http.Request) error {
 	vars := mux.Vars(req)
-	var dataJSON struct {
-		Data []byte `json:"data"`
+	var updateReq struct {
+		UpdatedData     []byte    `json:"updatedData"`
+		ClearData       bool      `json:"clearData"`
+		AddOrUpdateTags blob.Tags `json:"addOrUpdateTags"`
+		DeleteTags      []string  `json:"deleteTags"`
 	}
-	err := json.NewDecoder(req.Body).Decode(&dataJSON)
-	if err != nil {
-		ErrorJSON(bh.logger, rw, errors.New("failed to decode response body"), http.StatusBadRequest)
-		return
+	if err := json.NewDecoder(req.Body).Decode(&updateReq); err != nil {
+		return errorWithStatusCode{Status: http.StatusBadRequest, error: fmt.Errorf("failed to decode response body: %v", err)}
 	}
-	bh.process(blob.UpdateCommand(blob.ID(vars["id"]), dataJSON.Data), rw)
+	cmd := blob.UpdateCommand(
+		blob.ID(vars["id"]),
+		updateReq.UpdatedData,
+		updateReq.ClearData,
+		updateReq.AddOrUpdateTags,
+		updateReq.DeleteTags)
+	return bh.process(cmd, rw)
 }
 
-func (bh *BlobHandler) Delete(rw http.ResponseWriter, req *http.Request) {
+func (bh *BlobHandler) Delete(rw http.ResponseWriter, req *http.Request) error {
 	vars := mux.Vars(req)
-	bh.process(blob.DeleteCommand(blob.ID(vars["id"])), rw)
+	return bh.process(blob.DeleteCommand(blob.ID(vars["id"])), rw)
 }
 
-func (bh *BlobHandler) process(cmd blob.Command, rw http.ResponseWriter) {
-	_, err := bh.aggregateRepo.Process(cmd)
-	if err != nil {
-		ErrorJSON(bh.logger, rw, fmt.Errorf("cannot process %v with aggregate id %v: %v", cmd.CommandType(), cmd.AggregateID(), err), http.StatusNotFound)
-		return
+func (bh *BlobHandler) process(cmd blob.Command, rw http.ResponseWriter) error {
+	if _, err := bh.aggregateRepo.Process(cmd); err != nil {
+		return notFoundError(fmt.Errorf("cannot process %v with aggregate id %v: %v", cmd.CommandType(), cmd.ID, err))
 	}
 	rw.WriteHeader(http.StatusNoContent)
+	return nil
 }

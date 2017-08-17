@@ -1,18 +1,48 @@
 package blob
 
+import (
+	"fmt"
+	"sync"
+)
+
 type EventStore interface {
-	Find(id string) ([]Event, error)
-	Persist([]Event) error
+	Find(ID) ([]EventWithMetadata, error)
+	Persist(ID, []EventWithMetadata) error
 }
 
-type InMemoryEventStore map[string][]Event
-
-func (i InMemoryEventStore) Find(ID string) ([]Event, error) {
-	return i[ID], nil
+type InMemoryEventStore struct {
+	mux        *sync.Mutex
+	eventStore map[ID][]EventWithMetadata
 }
 
-func (i InMemoryEventStore) Persist(events []Event) error {
-	id := events[0].AggregateID()
-	i[id] = append(i[id], events...)
+func NewInMemoryEventStore() *InMemoryEventStore {
+	return &InMemoryEventStore{mux: new(sync.Mutex), eventStore: make(map[ID][]EventWithMetadata)}
+}
+
+func (i *InMemoryEventStore) Find(id ID) ([]EventWithMetadata, error) {
+	i.mux.Lock()
+	defer i.mux.Unlock()
+	return i.eventStore[id], nil
+}
+
+func (i *InMemoryEventStore) Persist(id ID, events []EventWithMetadata) error {
+	i.mux.Lock()
+	defer i.mux.Unlock()
+
+	seenSequences := make(map[uint64]bool)
+	for _, existingEvents := range i.eventStore[id] {
+		seenSequences[existingEvents.Sequence] = true
+	}
+
+	for _, event := range events {
+		if event.ID != id {
+			return fmt.Errorf("cannot persist event %v as it does not have a matching aggregateID %v", event, id)
+		}
+		if seenSequences[event.Sequence] {
+			return fmt.Errorf("cannot persist event %v as an event with the same sequence already exists", event)
+		}
+	}
+
+	i.eventStore[id] = append(i.eventStore[id], events...)
 	return nil
 }

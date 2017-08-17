@@ -6,7 +6,7 @@ import (
 )
 
 func TestNewCreateCommand(t *testing.T) {
-	store := make(InMemoryEventStore)
+	store := NewInMemoryEventStore()
 	repo := NewAggregateRepository(store)
 
 	blob, err := repo.Process(CreateCommand("1", "text", []byte("hello")))

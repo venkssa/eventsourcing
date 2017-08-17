@@ -1,40 +1,94 @@
 package blob
 
+type EventWithMetadata struct {
+	ID
+	Sequence uint64
+	Event
+}
+
+func (e EventWithMetadata) Apply(b Blob) Blob {
+	appliedBlob := e.Event.Apply(b)
+	appliedBlob.ID = e.ID
+	appliedBlob.Sequence = e.Sequence
+	return appliedBlob
+}
+
+func wrap(aggregateID ID, sequence uint64, events ...Event) []EventWithMetadata {
+	wrappedEvents := make([]EventWithMetadata, len(events))
+	for i, event := range events {
+		wrappedEvents[i] = EventWithMetadata{ID: aggregateID, Sequence: sequence, Event: event}
+		sequence++
+	}
+	return wrappedEvents
+}
+
 type Event interface {
-	AggregateID() string
 	Apply(Blob) Blob
 }
 
 type CreatedEvent struct {
-	ID
 	BlobType
-	Data     []byte
-	Sequence uint64
+	Data []byte
 }
 
 func (c CreatedEvent) Apply(Blob) Blob {
-	return Blob{ID: c.ID, BlobType: c.BlobType, Data: c.Data, Sequence: c.Sequence}
+	return Blob{BlobType: c.BlobType, Data: c.Data}
 }
 
-type UpdatedEvent struct {
-	ID
-	Data     []byte
-	Sequence uint64
+type DataUpdatedEvent struct {
+	Data []byte
 }
 
-func (u UpdatedEvent) Apply(b Blob) Blob {
+func (u DataUpdatedEvent) Apply(b Blob) Blob {
 	b.Data = u.Data
-	b.Sequence = u.Sequence
 	return b
 }
 
-type DeletedEvent struct {
-	ID
-	Sequence uint64
+type TagsAddedEvent Tags
+
+func (t TagsAddedEvent) Apply(b Blob) Blob {
+	tags := make(Tags)
+	for k, v := range b.Tags {
+		tags[k] = v
+	}
+	for addedKey, addedValue := range t {
+		tags[addedKey] = addedValue
+	}
+	b.Tags = tags
+	return b
 }
+
+type TagsDeletedEvent []string
+
+func (t TagsDeletedEvent) Apply(b Blob) Blob {
+	tags := make(Tags)
+	for k, v := range b.Tags {
+		tags[k] = v
+	}
+	for _, deletedKey := range t {
+		delete(tags, deletedKey)
+	}
+	b.Tags = tags
+	return b
+}
+
+type TagsUpdatedEvent Tags
+
+func (t TagsUpdatedEvent) Apply(b Blob) Blob {
+	tags := make(Tags)
+	for k, v := range b.Tags {
+		tags[k] = v
+	}
+	for updatedKey, updatedValue := range t {
+		tags[updatedKey] = updatedValue
+	}
+	b.Tags = tags
+	return b
+}
+
+type DeletedEvent struct{}
 
 func (d DeletedEvent) Apply(b Blob) Blob {
 	b.Deleted = true
-	b.Sequence = d.Sequence
 	return b
 }
