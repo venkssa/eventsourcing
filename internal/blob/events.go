@@ -92,3 +92,10 @@ func (d DeletedEvent) Apply(b Blob) Blob {
 	b.Deleted = true
 	return b
 }
+
+type RestoredEvent struct{}
+
+func (r RestoredEvent) Apply(b Blob) Blob {
+	b.Deleted = false
+	return b
+}

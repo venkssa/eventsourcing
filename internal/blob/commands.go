@@ -135,7 +135,33 @@ func DeleteCommand(aggregateID ID) Command {
 			return nil
 		},
 		eventGenerator: func(b Blob) []EventWithMetadata {
+			if b.Deleted {
+				return nil
+			}
 			return wrap(aggregateID, b.Sequence+1, DeletedEvent{})
+
+		},
+	}
+}
+
+func RestoreCommand(aggregateID ID) Command {
+	return Command{
+		ID:          aggregateID,
+		commandType: "RESTORE",
+		validator: func(b Blob) error {
+			if aggregateID == "" {
+				return errors.New("AggregateID should not be empty")
+			}
+			if b.ID != aggregateID {
+				return fmt.Errorf("AggregateID %s in blob does not match %s in command", b.ID, aggregateID)
+			}
+			if !b.Deleted {
+				return fmt.Errorf("Blob %v not deleted. Only deleted blob can be restored", b.ID)
+			}
+			return nil
+		},
+		eventGenerator: func(b Blob) []EventWithMetadata {
+			return wrap(aggregateID, b.Sequence+1, RestoredEvent{})
 		},
 	}
 }

@@ -38,6 +38,9 @@ func (bh *BlobHandler) Data(rw http.ResponseWriter, req *http.Request) error {
 		return notFoundError(err)
 	}
 
+	if blb.Deleted {
+		return notFoundError(fmt.Errorf("blob %v is deleted", blb.ID))
+	}
 	rw.Header().Set("Content-Type", blb.BlobType.String())
 	rw.WriteHeader(http.StatusOK)
 	_, err = rw.Write(blb.Data)
@@ -88,6 +91,7 @@ func (bh *BlobHandler) Update(rw http.ResponseWriter, req *http.Request) error {
 		ClearData       bool      `json:"clearData"`
 		AddOrUpdateTags blob.Tags `json:"addOrUpdateTags"`
 		DeleteTags      []string  `json:"deleteTags"`
+		RestoreBlob     bool      `json:"restoreBlob"`
 	}
 	if err := json.NewDecoder(req.Body).Decode(&updateReq); err != nil {
 		return errorWithStatusCode{Status: http.StatusBadRequest, error: fmt.Errorf("failed to decode response body: %v", err)}
@@ -98,6 +102,10 @@ func (bh *BlobHandler) Update(rw http.ResponseWriter, req *http.Request) error {
 		updateReq.ClearData,
 		updateReq.AddOrUpdateTags,
 		updateReq.DeleteTags)
+
+	if updateReq.RestoreBlob {
+		cmd = blob.RestoreCommand(cmd.ID)
+	}
 	return bh.process(cmd, rw)
 }
 

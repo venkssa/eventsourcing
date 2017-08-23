@@ -2,6 +2,10 @@ package blob
 
 type ID string
 
+func (id ID) String() string {
+	return string(id)
+}
+
 type Tags map[string]string
 
 type BlobType string
