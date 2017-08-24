@@ -79,7 +79,7 @@ func UpdateCommand(aggregateID ID, updatedData []byte, clearData bool, tagsToAdd
 			}
 			for _, tagToDelete := range tagsToDelete {
 				if _, ok := tagsToAddOrUpdate[tagToDelete]; ok {
-					return fmt.Errorf("cannot delete a tag %v as it is being updated at the same time", tagsToDelete)
+					return fmt.Errorf("cannot delete a tag %v as it is being updated at the same time", tagToDelete)
 				}
 			}
 			return nil
@@ -94,16 +94,24 @@ func UpdateCommand(aggregateID ID, updatedData []byte, clearData bool, tagsToAdd
 				events = append(events, DataUpdatedEvent{Data: nil})
 			}
 			if len(tagsToDelete) != 0 {
-				events = append(events, TagsDeletedEvent(tagsToDelete))
+				var tagsDeleteEvent TagsDeletedEvent
+				for _, tagToDelete := range tagsToDelete {
+					if b.HasTag(tagToDelete) {
+						tagsDeleteEvent = append(tagsDeleteEvent, tagToDelete)
+					}
+				}
+				if len(tagsDeleteEvent) != 0 {
+					events = append(events, tagsDeleteEvent)
+				}
 			}
 			if len(tagsToAddOrUpdate) != 0 {
 				tagsToAdd := make(Tags)
 				tagsToUpdate := make(Tags)
 
 				for key, value := range tagsToAddOrUpdate {
-					if _, ok := b.Tags[key]; ok {
+					if blobTagValue, ok := b.Tags[key]; ok && blobTagValue != value {
 						tagsToUpdate[key] = value
-					} else {
+					} else if !ok {
 						tagsToAdd[key] = value
 					}
 				}

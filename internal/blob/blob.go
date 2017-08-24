@@ -8,6 +8,11 @@ func (id ID) String() string {
 
 type Tags map[string]string
 
+func (t Tags) HasTag(tag string) bool {
+	_, ok := t[tag]
+	return ok
+}
+
 type BlobType string
 
 func (bt BlobType) String() string {
