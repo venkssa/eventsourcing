@@ -28,21 +28,26 @@ func NotFoundHandler(logger log.Logger) http.HandlerFunc {
 	}
 }
 
-func OkJSON(rw http.ResponseWriter, v interface{}) error {
-	buf := new(bytes.Buffer)
-	if err := json.NewEncoder(buf).Encode(v); err != nil {
-		return internalServerError(err)
-	}
-	rw.Header().Set("Content-Type", "application/json")
+func Ok(rw http.ResponseWriter, contentType string, data io.Reader) error {
+	rw.Header().Set("Content-Type", contentType)
 	rw.WriteHeader(http.StatusOK)
-	if _, err := io.Copy(rw, buf); err != nil {
+	if _, err := io.Copy(rw, data); err != nil {
 		return internalServerError(fmt.Errorf("failed to write response body: %v", err))
 	}
 	return nil
 }
 
+func OkJSON(rw http.ResponseWriter, v interface{}) error {
+	buf := new(bytes.Buffer)
+	if err := json.NewEncoder(buf).Encode(v); err != nil {
+		return internalServerError(err)
+	}
+	return Ok(rw, "application/json", buf)
+}
+
 func withErrorHandler(logger log.Logger, fn func(http.ResponseWriter, *http.Request) error) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
+		rw.Header().Set("Access-Control-Allow-Origin", "*")
 		err := fn(rw, req)
 		if err == nil {
 			return

@@ -109,7 +109,7 @@ func UpdateCommand(aggregateID ID, updatedData []byte, clearData bool, tagsToAdd
 				tagsToUpdate := make(Tags)
 
 				for key, value := range tagsToAddOrUpdate {
-					if blobTagValue, ok := b.Tags[key]; ok && blobTagValue != value {
+					if tagValue, ok := b.Tags[key]; ok && tagValue != value {
 						tagsToUpdate[key] = value
 					} else if !ok {
 						tagsToAdd[key] = value

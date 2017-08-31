@@ -127,73 +127,60 @@ func (l *LocalFileSystemEventStore) Persist(id ID, events []EventWithMetadata) e
 }
 
 func marshal(event EventWithMetadata) ([]byte, error) {
-	persistedEvent := localFileSystemPersistedEvent{ID: event.ID, Sequence: event.Sequence}
-
-	switch ev := event.Event.(type) {
+	var eventType string
+	switch event.Event.(type) {
 	case CreatedEvent:
-		persistedEvent.EventType = "CE"
-		persistedEvent.BlobType = ev.BlobType
-		persistedEvent.Data = ev.Data
+		eventType = "CE"
 	case DataUpdatedEvent:
-		persistedEvent.EventType = "DUE"
-		persistedEvent.DataUpdated = ev.Data
+		eventType = "DUE"
 	case TagsAddedEvent:
-		persistedEvent.EventType = "TAE"
-		persistedEvent.TagsAdded = Tags(ev)
+		eventType = "TAE"
 	case TagsUpdatedEvent:
-		persistedEvent.EventType = "TUE"
-		persistedEvent.TagsUpdated = Tags(ev)
+		eventType = "TUE"
 	case TagsDeletedEvent:
-		persistedEvent.EventType = "TDE"
-		persistedEvent.TagsDeleted = []string(ev)
+		eventType = "TDE"
 	case DeletedEvent:
-		persistedEvent.EventType = "DE"
+		eventType = "DE"
 	case RestoredEvent:
-		persistedEvent.EventType = "RE"
+		eventType = "RE"
 	}
-	return json.Marshal(persistedEvent)
+	b, err := json.Marshal(event.Event)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistableEvent{event.ID, event.Sequence, eventType, b})
 }
 
 func unmarshal(data []byte) (EventWithMetadata, error) {
-	var persistedEvent localFileSystemPersistedEvent
-	if err := json.Unmarshal(data, &persistedEvent); err != nil {
+	var pe persistableEvent
+	if err := json.Unmarshal(data, &pe); err != nil {
 		return EventWithMetadata{}, err
 	}
-
-	e := EventWithMetadata{ID: persistedEvent.ID, Sequence: persistedEvent.Sequence}
-	switch persistedEvent.EventType {
+	var event Event
+	switch pe.EventType {
 	case "CE":
-		e.Event = CreatedEvent{
-			BlobType: persistedEvent.BlobType,
-			Data:     persistedEvent.Data,
-		}
+		event = &CreatedEvent{}
 	case "DUE":
-		e.Event = DataUpdatedEvent{
-			Data: persistedEvent.DataUpdated,
-		}
+		event = &DataUpdatedEvent{}
 	case "TAE":
-		e.Event = TagsAddedEvent(persistedEvent.TagsAdded)
+		event = &TagsAddedEvent{}
 	case "TUE":
-		e.Event = TagsUpdatedEvent(persistedEvent.TagsUpdated)
+		event = &TagsUpdatedEvent{}
 	case "TDE":
-		e.Event = TagsDeletedEvent(persistedEvent.TagsDeleted)
+		event = &TagsDeletedEvent{}
 	case "DE":
-		e.Event = DeletedEvent{}
+		event = &DeletedEvent{}
 	case "RE":
-		e.Event = RestoredEvent{}
+		event = &RestoredEvent{}
 	}
 
-	return e, nil
+	err := json.Unmarshal(pe.EventAsByte, event)
+	return EventWithMetadata{ID: pe.ID, Sequence: pe.Sequence, Event: event}, err
 }
 
-type localFileSystemPersistedEvent struct {
+type persistableEvent struct {
 	ID          `json:"id"`
 	Sequence    uint64 `json:"sequence"`
 	EventType   string `json:"eventType"`
-	BlobType    `json:"blobType"`
-	Data        []byte   `json:"data"`
-	DataUpdated []byte   `json:"dataUpdated"`
-	TagsAdded   Tags     `json:"tagsAdded"`
-	TagsUpdated Tags     `json:"tagsUpdated"`
-	TagsDeleted []string `json:"tagsDeleted"`
+	EventAsByte []byte `json:"eventAsByte"`
 }

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,13 +42,7 @@ func (bh *BlobHandler) Data(rw http.ResponseWriter, req *http.Request) error {
 	if blb.Deleted {
 		return notFoundError(fmt.Errorf("blob %v is deleted", blb.ID))
 	}
-	rw.Header().Set("Content-Type", blb.BlobType.String())
-	rw.WriteHeader(http.StatusOK)
-	_, err = rw.Write(blb.Data)
-	if err != nil {
-		return internalServerError(err)
-	}
-	return nil
+	return Ok(rw, blb.BlobType.String(), bytes.NewBuffer(blb.Data))
 }
 
 func (bh *BlobHandler) Find(rw http.ResponseWriter, req *http.Request) error {
