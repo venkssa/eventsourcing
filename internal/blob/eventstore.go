@@ -144,11 +144,11 @@ func marshal(event EventWithMetadata) ([]byte, error) {
 	case RestoredEvent:
 		eventType = "RE"
 	}
-	b, err := json.Marshal(event.Event)
+	marshaledEvent, err := json.Marshal(event.Event)
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(persistableEvent{event.ID, event.Sequence, eventType, b})
+	return json.Marshal(persistableEvent{event.ID, event.Sequence, eventType, marshaledEvent})
 }
 
 func unmarshal(data []byte) (EventWithMetadata, error) {
@@ -174,13 +174,13 @@ func unmarshal(data []byte) (EventWithMetadata, error) {
 		event = &RestoredEvent{}
 	}
 
-	err := json.Unmarshal(pe.EventAsByte, event)
+	err := json.Unmarshal(pe.MarshaledEvent, event)
 	return EventWithMetadata{ID: pe.ID, Sequence: pe.Sequence, Event: event}, err
 }
 
 type persistableEvent struct {
-	ID          `json:"id"`
-	Sequence    uint64 `json:"sequence"`
-	EventType   string `json:"eventType"`
-	EventAsByte []byte `json:"eventAsByte"`
+	ID             `json:"id"`
+	Sequence       uint64          `json:"sequence"`
+	EventType      string          `json:"eventType"`
+	MarshaledEvent json.RawMessage `json:"marshaledEvent"`
 }

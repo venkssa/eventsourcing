@@ -9,7 +9,7 @@ func TestNewCreateCommand(t *testing.T) {
 	store := NewInMemoryEventStore()
 	repo := NewAggregateRepository(store)
 
-	blob, err := repo.Process(CreateCommand("1", "text", []byte("hello")))
+	blob, err := repo.Process(CreateCommand("1", "application/text", []byte("hello")))
 	if err != nil {
 		t.Fatal(err)
 	}
