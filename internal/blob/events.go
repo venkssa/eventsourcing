@@ -13,8 +13,17 @@ func (e EventWithMetadata) Apply(b Blob) Blob {
 	return appliedBlob
 }
 
-func wrap(aggregateID ID, sequence uint64, events ...Event) []EventWithMetadata {
-	wrappedEvents := make([]EventWithMetadata, len(events))
+type EventWithMetadataSlice []EventWithMetadata
+
+func (e EventWithMetadataSlice) Apply(b Blob) Blob {
+	for _, event := range e {
+		b = event.Apply(b)
+	}
+	return b
+}
+
+func wrap(aggregateID ID, sequence uint64, events ...Event) EventWithMetadataSlice {
+	wrappedEvents := make(EventWithMetadataSlice, len(events))
 	for i, event := range events {
 		wrappedEvents[i] = EventWithMetadata{ID: aggregateID, Sequence: sequence, Event: event}
 		sequence++

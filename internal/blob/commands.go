@@ -8,11 +8,11 @@ import (
 type Command struct {
 	ID
 	commandType    string
-	eventGenerator func(Blob) []EventWithMetadata
+	eventGenerator func(Blob) EventWithMetadataSlice
 	validator      func(Blob) error
 }
 
-func (c Command) GenerateEvents(b Blob) ([]EventWithMetadata, CommandError) {
+func (c Command) GenerateEvents(b Blob) (EventWithMetadataSlice, error) {
 	if err := c.validator(b); err != nil {
 		return nil, err
 	}
@@ -38,6 +38,10 @@ func (ce commandError) Error() string {
 	return fmt.Sprintf("cannot process %T command: %s", ce.CommandType(), ce.errStr)
 }
 
+var (
+	errEmptyID = errors.New("ID should not be empty")
+)
+
 func CreateCommand(aggregateID ID, blobType BlobType, data []byte) Command {
 	return Command{
 		ID:          aggregateID,
@@ -57,19 +61,19 @@ func CreateCommand(aggregateID ID, blobType BlobType, data []byte) Command {
 			}
 			return nil
 		},
-		eventGenerator: func(b Blob) []EventWithMetadata {
+		eventGenerator: func(b Blob) EventWithMetadataSlice {
 			return wrap(aggregateID, 1, CreatedEvent{BlobType: blobType, Data: data})
 		},
 	}
 }
 
-func UpdateCommand(aggregateID ID, updatedData []byte, clearData bool, tagsToAddOrUpdate Tags, tagsToDelete []string) Command {
+func UpdateCommand(aggregateID ID, updatedData []byte, clearData bool) Command {
 	return Command{
 		ID:          aggregateID,
 		commandType: "UPDATE",
 		validator: func(b Blob) error {
 			if aggregateID == "" {
-				return errors.New("ID should not be empty")
+				return errEmptyID
 			}
 			if b.ID != aggregateID {
 				return fmt.Errorf("ID %s in blob does not match %s in command", b.ID, aggregateID)
@@ -77,14 +81,9 @@ func UpdateCommand(aggregateID ID, updatedData []byte, clearData bool, tagsToAdd
 			if len(updatedData) != 0 && clearData {
 				return errors.New("cannot updated as well as clear data at the same time")
 			}
-			for _, tagToDelete := range tagsToDelete {
-				if _, ok := tagsToAddOrUpdate[tagToDelete]; ok {
-					return fmt.Errorf("cannot delete a tag %v as it is being updated at the same time", tagToDelete)
-				}
-			}
 			return nil
 		},
-		eventGenerator: func(b Blob) []EventWithMetadata {
+		eventGenerator: func(b Blob) EventWithMetadataSlice {
 			var events []Event
 
 			if len(updatedData) != 0 && !clearData {
@@ -93,6 +92,33 @@ func UpdateCommand(aggregateID ID, updatedData []byte, clearData bool, tagsToAdd
 			if clearData {
 				events = append(events, DataUpdatedEvent{Data: nil})
 			}
+
+			return wrap(aggregateID, b.Sequence+1, events...)
+		},
+	}
+}
+
+func UpdateTagsCommand(aggregateID ID, tagsToAddOrUpdate Tags, tagsToDelete []string) Command {
+	return Command{
+		ID:          aggregateID,
+		commandType: "UPDATE_TAGS",
+		validator: func(b Blob) error {
+			if aggregateID == "" {
+				return errEmptyID
+			}
+			if b.ID != aggregateID {
+				return fmt.Errorf("ID %s in blob does not match %s in command", b.ID, aggregateID)
+			}
+			for _, tagToDelete := range tagsToDelete {
+				if _, ok := tagsToAddOrUpdate[tagToDelete]; ok {
+					return fmt.Errorf("cannot delete a tag '%v' as it is being updated at the same time", tagToDelete)
+				}
+			}
+			return nil
+		},
+		eventGenerator: func(b Blob) EventWithMetadataSlice {
+			var events []Event
+
 			if len(tagsToDelete) != 0 {
 				var tagsDeleteEvent TagsDeletedEvent
 				for _, tagToDelete := range tagsToDelete {
@@ -104,6 +130,7 @@ func UpdateCommand(aggregateID ID, updatedData []byte, clearData bool, tagsToAdd
 					events = append(events, tagsDeleteEvent)
 				}
 			}
+
 			if len(tagsToAddOrUpdate) != 0 {
 				tagsToAdd := make(Tags)
 				tagsToUpdate := make(Tags)
@@ -135,14 +162,14 @@ func DeleteCommand(aggregateID ID) Command {
 		commandType: "DELETE",
 		validator: func(b Blob) error {
 			if aggregateID == "" {
-				return errors.New("AggregateID should not be empty")
+				return errEmptyID
 			}
 			if b.ID != aggregateID {
-				return fmt.Errorf("AggregateID %s in blob does not match %s in command", b.ID, aggregateID)
+				return fmt.Errorf("ID %s in blob does not match %s in command", b.ID, aggregateID)
 			}
 			return nil
 		},
-		eventGenerator: func(b Blob) []EventWithMetadata {
+		eventGenerator: func(b Blob) EventWithMetadataSlice {
 			if b.Deleted {
 				return nil
 			}
@@ -158,17 +185,17 @@ func RestoreCommand(aggregateID ID) Command {
 		commandType: "RESTORE",
 		validator: func(b Blob) error {
 			if aggregateID == "" {
-				return errors.New("AggregateID should not be empty")
+				return errEmptyID
 			}
 			if b.ID != aggregateID {
-				return fmt.Errorf("AggregateID %s in blob does not match %s in command", b.ID, aggregateID)
+				return fmt.Errorf("ID %s in blob does not match %s in command", b.ID, aggregateID)
 			}
 			if !b.Deleted {
 				return fmt.Errorf("Blob %v not deleted. Only deleted blob can be restored", b.ID)
 			}
 			return nil
 		},
-		eventGenerator: func(b Blob) []EventWithMetadata {
+		eventGenerator: func(b Blob) EventWithMetadataSlice {
 			return wrap(aggregateID, b.Sequence+1, RestoredEvent{})
 		},
 	}

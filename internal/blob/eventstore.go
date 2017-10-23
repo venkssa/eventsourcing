@@ -13,26 +13,26 @@ import (
 )
 
 type EventStore interface {
-	Find(ID) ([]EventWithMetadata, error)
-	Persist(ID, []EventWithMetadata) error
+	Find(ID) (EventWithMetadataSlice, error)
+	Persist(ID, EventWithMetadataSlice) error
 }
 
 type InMemoryEventStore struct {
 	mux        *sync.Mutex
-	eventStore map[ID][]EventWithMetadata
+	eventStore map[ID]EventWithMetadataSlice
 }
 
 func NewInMemoryEventStore() *InMemoryEventStore {
-	return &InMemoryEventStore{mux: new(sync.Mutex), eventStore: make(map[ID][]EventWithMetadata)}
+	return &InMemoryEventStore{mux: new(sync.Mutex), eventStore: make(map[ID]EventWithMetadataSlice)}
 }
 
-func (i *InMemoryEventStore) Find(id ID) ([]EventWithMetadata, error) {
+func (i *InMemoryEventStore) Find(id ID) (EventWithMetadataSlice, error) {
 	i.mux.Lock()
 	defer i.mux.Unlock()
 	return i.eventStore[id], nil
 }
 
-func (i *InMemoryEventStore) Persist(id ID, events []EventWithMetadata) error {
+func (i *InMemoryEventStore) Persist(id ID, events EventWithMetadataSlice) error {
 	i.mux.Lock()
 	defer i.mux.Unlock()
 
@@ -63,14 +63,14 @@ func NewLocalFileSystemEventStore(baseDirectory string) *LocalFileSystemEventSto
 	return &LocalFileSystemEventStore{mux: new(sync.Mutex), baseDirectory: baseDirectory}
 }
 
-func (l *LocalFileSystemEventStore) Find(id ID) ([]EventWithMetadata, error) {
+func (l *LocalFileSystemEventStore) Find(id ID) (EventWithMetadataSlice, error) {
 	l.mux.Lock()
 	defer l.mux.Unlock()
 
-	var events []EventWithMetadata
+	var events EventWithMetadataSlice
 	dirPath := path.Join(l.baseDirectory, id.String())
 	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
-		return nil, nil
+		return nil, fmt.Errorf("cannot find events directory for id %v in eventstore", id)
 	}
 	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -98,7 +98,7 @@ func (l *LocalFileSystemEventStore) Find(id ID) ([]EventWithMetadata, error) {
 	return events, err
 }
 
-func (l *LocalFileSystemEventStore) Persist(id ID, events []EventWithMetadata) error {
+func (l *LocalFileSystemEventStore) Persist(id ID, events EventWithMetadataSlice) error {
 	l.mux.Lock()
 	defer l.mux.Unlock()
 

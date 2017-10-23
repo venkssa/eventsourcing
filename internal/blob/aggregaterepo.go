@@ -10,18 +10,17 @@ func NewAggregateRepository(store EventStore) AggregateRepository {
 	return AggregateRepository{store}
 }
 
+// Find finds an aggregate for the given ID or returns a error if the aggregate cannot be found.
 func (ar AggregateRepository) Find(id ID) (Blob, error) {
 	events, err := ar.store.Find(id)
 	if err != nil {
-		return Blob{}, fmt.Errorf("cannot find Blob events from store for ID %s: %v", id, err)
+		return Blob{}, fmt.Errorf("cannot find aggregate for ID %s: %v", id, err)
 	}
-	var blob Blob
-	for _, event := range events {
-		blob = event.Apply(blob)
-	}
-	return blob, nil
+	return events.Apply(Blob{}), nil
 }
 
+// Process applies the command to the aggregate to generate events, persist the newly generated events,
+// apply the new events to the aggrgate and return the updated aggregate or error. error is a CommandError.
 func (ar AggregateRepository) Process(cmd Command) (Blob, error) {
 	blob, err := ar.Find(cmd.ID)
 	if err != nil {
@@ -37,9 +36,5 @@ func (ar AggregateRepository) Process(cmd Command) (Blob, error) {
 		return Blob{}, NewCommandError(cmd, "failed to persist new events: %v", err)
 	}
 
-	for _, newEvent := range newEvents {
-		blob = newEvent.Apply(blob)
-	}
-
-	return blob, nil
+	return newEvents.Apply(blob), nil
 }
