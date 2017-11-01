@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
+	perrors "github.com/pkg/errors"
 	"github.com/venkssa/eventsourcing/internal/platform/log"
 )
 
@@ -32,7 +33,7 @@ func Ok(rw http.ResponseWriter, contentType string, data io.Reader) error {
 	rw.Header().Set("Content-Type", contentType)
 	rw.WriteHeader(http.StatusOK)
 	if _, err := io.Copy(rw, data); err != nil {
-		return internalServerError(fmt.Errorf("failed to write response body: %v", err))
+		return internalServerError(perrors.Wrap(err, "failed to write response body"))
 	}
 	return nil
 }
@@ -79,7 +80,11 @@ func notFoundError(err error) errorWithStatusCode {
 }
 
 func (e errorWithStatusCode) Write(logger log.Logger, rw http.ResponseWriter) {
-	logger.Info(e)
+	if e.Status >= 500 {
+		logger.Info(e.error)
+	} else {
+		logger.Debug(e.error)
+	}
 	ej := struct {
 		StatusCode int    `json:"statusCode"`
 		Message    string `json:"message"`

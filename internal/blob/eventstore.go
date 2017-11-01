@@ -1,6 +1,7 @@
 package blob
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -10,29 +11,44 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+
+	"github.com/pkg/errors"
 )
 
+// EventStore can store and retrieve events for aggregate ID.
 type EventStore interface {
-	Find(ID) ([]EventWithMetadata, error)
-	Persist(ID, []EventWithMetadata) error
+	//Find events for the aggregate ID.
+	// If events cannot be found for the aggregate ID we return an error with IsMissingAggregate() true.
+	Find(context.Context, ID) (EventWithMetadataSlice, error)
+	// Persist events for an aggregate ID.
+	Persist(context.Context, ID, EventWithMetadataSlice) error
+}
+
+type eventStoreError struct {
+	isMissingAggregate bool
+	error
+}
+
+func (e eventStoreError) IsMissingAggregate() bool {
+	return e.isMissingAggregate
 }
 
 type InMemoryEventStore struct {
 	mux        *sync.Mutex
-	eventStore map[ID][]EventWithMetadata
+	eventStore map[ID]EventWithMetadataSlice
 }
 
 func NewInMemoryEventStore() *InMemoryEventStore {
-	return &InMemoryEventStore{mux: new(sync.Mutex), eventStore: make(map[ID][]EventWithMetadata)}
+	return &InMemoryEventStore{mux: new(sync.Mutex), eventStore: make(map[ID]EventWithMetadataSlice)}
 }
 
-func (i *InMemoryEventStore) Find(id ID) ([]EventWithMetadata, error) {
+func (i *InMemoryEventStore) Find(ctx context.Context, id ID) (EventWithMetadataSlice, error) {
 	i.mux.Lock()
 	defer i.mux.Unlock()
 	return i.eventStore[id], nil
 }
 
-func (i *InMemoryEventStore) Persist(id ID, events []EventWithMetadata) error {
+func (i *InMemoryEventStore) Persist(ctx context.Context, id ID, events EventWithMetadataSlice) error {
 	i.mux.Lock()
 	defer i.mux.Unlock()
 
@@ -63,14 +79,16 @@ func NewLocalFileSystemEventStore(baseDirectory string) *LocalFileSystemEventSto
 	return &LocalFileSystemEventStore{mux: new(sync.Mutex), baseDirectory: baseDirectory}
 }
 
-func (l *LocalFileSystemEventStore) Find(id ID) ([]EventWithMetadata, error) {
+func (l *LocalFileSystemEventStore) Find(ctx context.Context, id ID) (EventWithMetadataSlice, error) {
 	l.mux.Lock()
 	defer l.mux.Unlock()
 
-	var events []EventWithMetadata
+	var events EventWithMetadataSlice
 	dirPath := path.Join(l.baseDirectory, id.String())
 	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
-		return nil, nil
+		return nil, eventStoreError{
+			isMissingAggregate: true,
+			error:              fmt.Errorf("cannot find events directory for id %v in eventstore", id)}
 	}
 	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -98,7 +116,7 @@ func (l *LocalFileSystemEventStore) Find(id ID) ([]EventWithMetadata, error) {
 	return events, err
 }
 
-func (l *LocalFileSystemEventStore) Persist(id ID, events []EventWithMetadata) error {
+func (l *LocalFileSystemEventStore) Persist(ctx context.Context, id ID, events EventWithMetadataSlice) error {
 	l.mux.Lock()
 	defer l.mux.Unlock()
 
@@ -110,17 +128,17 @@ func (l *LocalFileSystemEventStore) Persist(id ID, events []EventWithMetadata) e
 
 	dirPath := path.Join(l.baseDirectory, id.String())
 	if err := os.MkdirAll(dirPath, 0755); err != nil {
-		return fmt.Errorf("cannot create directory for persisting events: %v", err)
+		return errors.Wrap(err, "cannot create directory for persisting events")
 	}
 
 	for _, event := range events {
 		data, err := marshal(event)
 		if err != nil {
-			return fmt.Errorf("cannot marshal event to persist %v: %v", event, err)
+			return errors.Wrapf(err, "cannot marshal event to persist %v", event)
 		}
 		err = ioutil.WriteFile(path.Join(dirPath, strconv.FormatUint(event.Sequence, 10)), data, 0755)
 		if err != nil {
-			return fmt.Errorf("cannot persist event %v: %v", event, err)
+			return errors.Wrapf(err, "cannot persist event %v: %v", event)
 		}
 	}
 	return nil

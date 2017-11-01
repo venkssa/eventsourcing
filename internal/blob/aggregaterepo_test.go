@@ -1,6 +1,7 @@
 package blob
 
 import (
+	"context"
 	"reflect"
 	"testing"
 )
@@ -9,12 +10,12 @@ func TestNewCreateCommand(t *testing.T) {
 	store := NewInMemoryEventStore()
 	repo := NewAggregateRepository(store)
 
-	blob, err := repo.Process(CreateCommand("1", "application/text", []byte("hello")))
+	blob, err := repo.Process(context.Background(), CreateCommand("1", "application/text", []byte("hello")))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	newFetchBlob, err := repo.Find("1")
+	newFetchBlob, err := repo.Find(context.Background(), "1")
 	if err != nil {
 		t.Fatal(err)
 	}

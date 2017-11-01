@@ -20,11 +20,11 @@ type StdLibLogger struct {
 }
 
 func (l *StdLibLogger) Info(v ...interface{}) {
-	l.Logger.Printf("INFO: %v", v...)
+	l.Logger.Printf("INFO: %+v", v...)
 }
 
 func (l *StdLibLogger) Debug(v ...interface{}) {
 	if l.Level == Debug {
-		l.Logger.Printf("DEBUG: %v", v...)
+		l.Logger.Printf("DEBUG: %+v", v...)
 	}
 }
