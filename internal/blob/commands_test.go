@@ -21,7 +21,7 @@ func TestUpdateTagsCommand(t *testing.T) {
 		"ID does not match blob.ID should be an error": {
 			ID:            "1",
 			Blob:          Blob{ID: "2"},
-			ExpectedError: errors.New("ID 2 in blob does not match 1 in command")},
+			ExpectedError: errors.New("id 2 in blob does not match 1 in command")},
 		"updating and deleting the same tag is an should be an error": {
 			ID:            "1",
 			AddOrUpdate:   Tags{"tag1": "value"},

@@ -1,7 +1,6 @@
 package blob
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -23,24 +22,19 @@ func (c Command) CommandType() string {
 	return c.commandType
 }
 
-type CommandError error
+var (
+	errEmptyID = commandError("ID should not be empty")
+)
 
-func NewCommandError(cmd Command, format string, a ...interface{}) CommandError {
-	return commandError{Command: cmd, errStr: fmt.Sprintf(format, a...)}
-}
+type commandError string
 
-type commandError struct {
-	Command
-	errStr string
+func (commandError) CommandError() bool {
+	return true
 }
 
 func (ce commandError) Error() string {
-	return fmt.Sprintf("cannot process %T command: %s", ce.CommandType(), ce.errStr)
+	return string(ce)
 }
-
-var (
-	errEmptyID = errors.New("ID should not be empty")
-)
 
 func CreateCommand(aggregateID ID, blobType BlobType, data []byte) Command {
 	return Command{
@@ -48,16 +42,16 @@ func CreateCommand(aggregateID ID, blobType BlobType, data []byte) Command {
 		commandType: "CREATE",
 		validator: func(b Blob) error {
 			if b.Deleted {
-				return fmt.Errorf("cannot create a deleted blob")
+				return commandError("cannot create a deleted blob")
 			}
 			if b.Sequence != 0 || b.BlobType != "" || b.ID != "" {
-				return errors.New("cannot create an existing blob")
+				return commandError("cannot create an existing blob")
 			}
 			if aggregateID == "" {
-				return errors.New("AggregateID should not be empty")
+				return errEmptyID
 			}
 			if blobType == "" {
-				return errors.New("BlobType should not be empty")
+				return commandError("BlobType should not be empty")
 			}
 			return nil
 		},
@@ -72,14 +66,11 @@ func UpdateCommand(aggregateID ID, updatedData []byte, clearData bool) Command {
 		ID:          aggregateID,
 		commandType: "UPDATE",
 		validator: func(b Blob) error {
-			if aggregateID == "" {
-				return errEmptyID
-			}
-			if b.ID != aggregateID {
-				return fmt.Errorf("ID %s in blob does not match %s in command", b.ID, aggregateID)
+			if err := validateID(b.ID, aggregateID); err != nil {
+				return err
 			}
 			if len(updatedData) != 0 && clearData {
-				return errors.New("cannot updated as well as clear data at the same time")
+				return commandError("cannot updated as well as clear data at the same time")
 			}
 			return nil
 		},
@@ -103,15 +94,13 @@ func UpdateTagsCommand(aggregateID ID, tagsToAddOrUpdate Tags, tagsToDelete []st
 		ID:          aggregateID,
 		commandType: "UPDATE_TAGS",
 		validator: func(b Blob) error {
-			if aggregateID == "" {
-				return errEmptyID
-			}
-			if b.ID != aggregateID {
-				return fmt.Errorf("ID %s in blob does not match %s in command", b.ID, aggregateID)
+			if err := validateID(b.ID, aggregateID); err != nil {
+				return err
 			}
 			for _, tagToDelete := range tagsToDelete {
 				if _, ok := tagsToAddOrUpdate[tagToDelete]; ok {
-					return fmt.Errorf("cannot delete a tag '%v' as it is being updated at the same time", tagToDelete)
+					msg := fmt.Sprintf("cannot delete a tag '%v' as it is being updated at the same time", tagToDelete)
+					return commandError(msg)
 				}
 			}
 			return nil
@@ -161,20 +150,13 @@ func DeleteCommand(aggregateID ID) Command {
 		ID:          aggregateID,
 		commandType: "DELETE",
 		validator: func(b Blob) error {
-			if aggregateID == "" {
-				return errEmptyID
-			}
-			if b.ID != aggregateID {
-				return fmt.Errorf("ID %s in blob does not match %s in command", b.ID, aggregateID)
-			}
-			return nil
+			return validateID(b.ID, aggregateID)
 		},
 		eventGenerator: func(b Blob) EventWithMetadataSlice {
 			if b.Deleted {
 				return nil
 			}
 			return wrap(aggregateID, b.Sequence+1, DeletedEvent{})
-
 		},
 	}
 }
@@ -184,14 +166,11 @@ func RestoreCommand(aggregateID ID) Command {
 		ID:          aggregateID,
 		commandType: "RESTORE",
 		validator: func(b Blob) error {
-			if aggregateID == "" {
-				return errEmptyID
-			}
-			if b.ID != aggregateID {
-				return fmt.Errorf("ID %s in blob does not match %s in command", b.ID, aggregateID)
+			if err := validateID(b.ID, aggregateID); err != nil {
+				return err
 			}
 			if !b.Deleted {
-				return fmt.Errorf("Blob %v not deleted. Only deleted blob can be restored", b.ID)
+				return commandError(fmt.Sprintf("blob %v not deleted; only deleted blob can be restored", b.ID))
 			}
 			return nil
 		},
@@ -199,4 +178,17 @@ func RestoreCommand(aggregateID ID) Command {
 			return wrap(aggregateID, b.Sequence+1, RestoredEvent{})
 		},
 	}
+}
+
+func validateID(blobID ID, aggregateID ID) error {
+	if aggregateID == "" {
+		return errEmptyID
+	}
+	if blobID == "" {
+		return commandError(fmt.Sprintf("blob with id %s does not exist", aggregateID))
+	}
+	if blobID != aggregateID {
+		return commandError(fmt.Sprintf("id %s in blob does not match %s in command", blobID, aggregateID))
+	}
+	return nil
 }

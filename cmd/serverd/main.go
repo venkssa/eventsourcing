@@ -21,7 +21,7 @@ var eventStoreFilePath = flag.String("eventStoreFilePath", "/tmp/eventstore", "p
 
 func main() {
 	flag.Parse()
-	logger := &plog.StdLibLogger{Level: plog.Debug, Logger: log.New(os.Stderr, "", log.LstdFlags)}
+	logger := &plog.StdLibLogger{Level: plog.Info, Logger: log.New(os.Stderr, "", log.LstdFlags)}
 
 	hdlrRegs := []handlers.HandlerRegisterer{
 		handlers.NewBlobHandler(logger, blob.NewAggregateRepository(blob.NewLocalFileSystemEventStore(*eventStoreFilePath))),

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/venkssa/eventsourcing/internal/blob"
+	"github.com/venkssa/eventsourcing/internal/platform"
 	"github.com/venkssa/eventsourcing/internal/platform/log"
 )
 
@@ -35,9 +37,12 @@ func NewBlobHandler(logger log.Logger, aggregateRepo blob.AggregateRepository) H
 
 func (bh *BlobHandler) Find(rw http.ResponseWriter, req *http.Request) error {
 	vars := mux.Vars(req)
-	blb, err := bh.aggregateRepo.Find(blob.ID(vars["id"]))
+	blb, err := bh.aggregateRepo.Find(req.Context(), blob.ID(vars["id"]))
 	if err != nil {
-		return notFoundError(err)
+		if platform.IsMissingAggregate(err) {
+			return notFoundError(err)
+		}
+		return internalServerError(err)
 	}
 
 	b := struct {
@@ -64,7 +69,7 @@ func (bh *BlobHandler) Create(rw http.ResponseWriter, req *http.Request) error {
 	}
 
 	cmd := blob.CreateCommand(blob.ID(vars["id"]), blob.BlobType(blobType), data)
-	return bh.process(cmd, rw)
+	return bh.process(req.Context(), cmd, rw)
 }
 
 func (bh *BlobHandler) Update(rw http.ResponseWriter, req *http.Request) error {
@@ -84,19 +89,22 @@ func (bh *BlobHandler) Update(rw http.ResponseWriter, req *http.Request) error {
 	} else {
 		cmd = blob.UpdateCommand(blob.ID(vars["id"]), updateReq.UpdatedData, updateReq.ClearData)
 	}
-	return bh.process(cmd, rw)
+	return bh.process(req.Context(), cmd, rw)
 }
 
 func (bh *BlobHandler) Delete(rw http.ResponseWriter, req *http.Request) error {
 	vars := mux.Vars(req)
-	return bh.process(blob.DeleteCommand(blob.ID(vars["id"])), rw)
+	return bh.process(req.Context(), blob.DeleteCommand(blob.ID(vars["id"])), rw)
 }
 
 func (bh *BlobHandler) Data(rw http.ResponseWriter, req *http.Request) error {
 	vars := mux.Vars(req)
-	blb, err := bh.aggregateRepo.Find(blob.ID(vars["id"]))
+	blb, err := bh.aggregateRepo.Find(req.Context(), blob.ID(vars["id"]))
 	if err != nil {
-		return notFoundError(err)
+		if platform.IsMissingAggregate(err) {
+			return notFoundError(err)
+		}
+		return internalServerError(err)
 	}
 
 	if blb.Deleted {
@@ -116,12 +124,18 @@ func (bh *BlobHandler) UpdateTags(rw http.ResponseWriter, req *http.Request) err
 	}
 
 	cmd := blob.UpdateTagsCommand(blob.ID(vars["id"]), tagReq.AddOrUpdate, tagReq.Delete)
-	return bh.process(cmd, rw)
+	return bh.process(req.Context(), cmd, rw)
 }
 
-func (bh *BlobHandler) process(cmd blob.Command, rw http.ResponseWriter) error {
-	if _, err := bh.aggregateRepo.Process(cmd); err != nil {
-		return notFoundError(fmt.Errorf("cannot process %v with aggregate id %v: %v", cmd.CommandType(), cmd.ID, err))
+func (bh *BlobHandler) process(ctx context.Context, cmd blob.Command, rw http.ResponseWriter) error {
+	if _, err := bh.aggregateRepo.Process(ctx, cmd); err != nil {
+		if platform.IsMissingAggregate(err) {
+			return notFoundError(err)
+		}
+		if platform.CommandError(err) {
+			return badRequestError(err)
+		}
+		return internalServerError(err)
 	}
 	rw.WriteHeader(http.StatusNoContent)
 	return nil
