@@ -80,7 +80,7 @@ func (bh *BlobHandler) Update(rw http.ResponseWriter, req *http.Request) error {
 		RestoreBlob bool   `json:"restoreBlob"`
 	}
 	if err := json.NewDecoder(req.Body).Decode(&updateReq); err != nil {
-		return errorWithStatusCode{Status: http.StatusBadRequest, error: fmt.Errorf("failed to decode response body: %v", err)}
+		return handlerError{http.StatusBadRequest, fmt.Errorf("failed to decode response body: %v", err)}
 	}
 
 	var cmd blob.Command
@@ -120,7 +120,7 @@ func (bh *BlobHandler) UpdateTags(rw http.ResponseWriter, req *http.Request) err
 		Delete      []string  `json:"delete"`
 	}
 	if err := json.NewDecoder(req.Body).Decode(&tagReq); err != nil {
-		return errorWithStatusCode{Status: http.StatusBadRequest, error: fmt.Errorf("failed to decode response body: %v", err)}
+		return handlerError{http.StatusBadRequest, fmt.Errorf("failed to decode response body: %v", err)}
 	}
 
 	cmd := blob.UpdateTagsCommand(blob.ID(vars["id"]), tagReq.AddOrUpdate, tagReq.Delete)

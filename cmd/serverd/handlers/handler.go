@@ -54,7 +54,7 @@ func withErrorHandler(logger log.Logger, fn func(http.ResponseWriter, *http.Requ
 			return
 		}
 		switch err := err.(type) {
-		case errorWithStatusCode:
+		case handlerError:
 			err.Write(logger, rw)
 		case error:
 			notFoundError(err).Write(logger, rw)
@@ -62,24 +62,24 @@ func withErrorHandler(logger log.Logger, fn func(http.ResponseWriter, *http.Requ
 	}
 }
 
-type errorWithStatusCode struct {
+type handlerError struct {
 	Status int
 	error
 }
 
-func badRequestError(err error) errorWithStatusCode {
-	return errorWithStatusCode{Status: http.StatusBadRequest, error: err}
+func badRequestError(err error) handlerError {
+	return handlerError{Status: http.StatusBadRequest, error: err}
 }
 
-func internalServerError(err error) errorWithStatusCode {
-	return errorWithStatusCode{Status: http.StatusInternalServerError, error: err}
+func internalServerError(err error) handlerError {
+	return handlerError{Status: http.StatusInternalServerError, error: err}
 }
 
-func notFoundError(err error) errorWithStatusCode {
-	return errorWithStatusCode{Status: http.StatusNotFound, error: err}
+func notFoundError(err error) handlerError {
+	return handlerError{Status: http.StatusNotFound, error: err}
 }
 
-func (e errorWithStatusCode) Write(logger log.Logger, rw http.ResponseWriter) {
+func (e handlerError) Write(logger log.Logger, rw http.ResponseWriter) {
 	if e.Status >= 500 {
 		logger.Info(e.error)
 	} else {

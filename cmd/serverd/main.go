@@ -31,6 +31,7 @@ func main() {
 	for _, hdlrReg := range hdlrRegs {
 		hdlrReg.Register(muxRouter)
 	}
+	muxRouter.NotFoundHandler = handlers.NotFoundHandler(logger)
 
 	wg := new(sync.WaitGroup)
 	wg.Add(2)

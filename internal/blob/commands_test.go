@@ -35,7 +35,7 @@ func TestUpdateTagsCommand(t *testing.T) {
 			Blob:           Blob{ID: "1", Sequence: 1},
 			ExpectedEvents: wrap("1", 2, TagsAddedEvent(Tags{"add1": "v1"})),
 		},
-		"adding multiple tags should be create a TagsAddedEvent": {
+		"adding multiple tags should create a TagsAddedEvent": {
 			ID:             "1",
 			AddOrUpdate:    Tags{"add1": "v1", "add2": "v2"},
 			Blob:           Blob{ID: "1", Sequence: 1},
