@@ -29,6 +29,22 @@ func NotFoundHandler(logger log.Logger) http.HandlerFunc {
 	}
 }
 
+func withErrorHandler(logger log.Logger, fn func(http.ResponseWriter, *http.Request) error) http.HandlerFunc {
+	return func(rw http.ResponseWriter, req *http.Request) {
+		rw.Header().Set("Access-Control-Allow-Origin", "*")
+		err := fn(rw, req)
+		if err == nil {
+			return
+		}
+		switch err := err.(type) {
+		case handlerError:
+			err.Write(logger, rw)
+		case error:
+			notFoundError(err).Write(logger, rw)
+		}
+	}
+}
+
 func Ok(rw http.ResponseWriter, contentType string, data io.Reader) error {
 	rw.Header().Set("Content-Type", contentType)
 	rw.WriteHeader(http.StatusOK)
@@ -44,22 +60,6 @@ func OkJSON(rw http.ResponseWriter, v interface{}) error {
 		return internalServerError(err)
 	}
 	return Ok(rw, "application/json", buf)
-}
-
-func withErrorHandler(logger log.Logger, fn func(http.ResponseWriter, *http.Request) error) http.HandlerFunc {
-	return func(rw http.ResponseWriter, req *http.Request) {
-		rw.Header().Set("Access-Control-Allow-Origin", "*")
-		err := fn(rw, req)
-		if err == nil {
-			return
-		}
-		switch err := err.(type) {
-		case handlerError:
-			err.Write(logger, rw)
-		case error:
-			notFoundError(err).Write(logger, rw)
-		}
-	}
 }
 
 type handlerError struct {

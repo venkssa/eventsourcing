@@ -20,6 +20,7 @@ type EventStore interface {
 	//Find events for the aggregate ID.
 	// If events cannot be found for the aggregate ID we return an error with IsMissingAggregate() true.
 	Find(context.Context, ID) (EventWithMetadataSlice, error)
+
 	// Persist events for an aggregate ID.
 	Persist(context.Context, ID, EventWithMetadataSlice) error
 }

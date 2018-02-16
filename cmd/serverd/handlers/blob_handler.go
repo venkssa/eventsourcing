@@ -29,7 +29,9 @@ func NewBlobHandler(logger log.Logger, aggregateRepo blob.AggregateRepository) H
 		s.HandleFunc("/{id}", withErrorHandler(logger, hdlr.Create)).Methods(http.MethodPost)
 		s.HandleFunc("/{id}", withErrorHandler(logger, hdlr.Update)).Methods(http.MethodPut)
 		s.HandleFunc("/{id}", withErrorHandler(logger, hdlr.Delete)).Methods(http.MethodDelete)
+
 		s.HandleFunc("/{id}/data", withErrorHandler(logger, hdlr.Data)).Methods(http.MethodGet)
+
 		s.HandleFunc("/{id}/tags", withErrorHandler(logger, hdlr.UpdateTags)).Methods(http.MethodPut)
 	})
 	return hdlr
