@@ -20,7 +20,7 @@ type BlobHandler struct {
 	aggregateRepo blob.AggregateRepository
 }
 
-func NewBlobHandler(logger log.Logger, aggregateRepo blob.AggregateRepository) HandlerRegisterer {
+func NewBlobHandler(logger log.Logger, aggregateRepo blob.AggregateRepository) *BlobHandler {
 	hdlr := &BlobHandler{aggregateRepo: aggregateRepo}
 	hdlr.HandlerRegisterFunc = HandlerRegisterFunc(func(muxRouter *mux.Router) {
 		s := muxRouter.PathPrefix("/blob").Subrouter()
@@ -31,6 +31,8 @@ func NewBlobHandler(logger log.Logger, aggregateRepo blob.AggregateRepository) H
 		s.HandleFunc("/{id}", withErrorHandler(logger, hdlr.Delete)).Methods(http.MethodDelete)
 
 		s.HandleFunc("/{id}/data", withErrorHandler(logger, hdlr.Data)).Methods(http.MethodGet)
+		s.HandleFunc("/{id}/data", withErrorHandler(logger, hdlr.UpdateData)).Methods(http.MethodPut)
+		s.HandleFunc("/{id}/data", withErrorHandler(logger, hdlr.DeleteData)).Methods(http.MethodDelete)
 
 		s.HandleFunc("/{id}/tags", withErrorHandler(logger, hdlr.UpdateTags)).Methods(http.MethodPut)
 	})
@@ -113,6 +115,23 @@ func (bh *BlobHandler) Data(rw http.ResponseWriter, req *http.Request) error {
 		return notFoundError(fmt.Errorf("blob %v is deleted", blb.ID))
 	}
 	return Ok(rw, blb.BlobType.String(), bytes.NewBuffer(blb.Data))
+}
+
+func (bh *BlobHandler) UpdateData(rw http.ResponseWriter, req *http.Request) error {
+	vars := mux.Vars(req)
+
+	data, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		return notFoundError(err)
+	}
+	cmd := blob.UpdateCommand(blob.ID(vars["id"]), data, false)
+	return bh.process(req.Context(), cmd, rw)
+}
+
+func (bh *BlobHandler) DeleteData(rw http.ResponseWriter, req *http.Request) error {
+	vars := mux.Vars(req)
+	cmd := blob.UpdateCommand(blob.ID(vars["id"]), nil, true)
+	return bh.process(req.Context(), cmd, rw)
 }
 
 func (bh *BlobHandler) UpdateTags(rw http.ResponseWriter, req *http.Request) error {

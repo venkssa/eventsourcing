@@ -75,16 +75,15 @@ func UpdateCommand(aggregateID ID, updatedData []byte, clearData bool) Command {
 			return nil
 		},
 		eventGenerator: func(b Blob) EventWithMetadataSlice {
-			var events []Event
+			var event Event
 
-			if len(updatedData) != 0 && !clearData {
-				events = append(events, DataUpdatedEvent{Data: updatedData})
-			}
 			if clearData {
-				events = append(events, DataUpdatedEvent{Data: nil})
+				event = DataUpdatedEvent{Data: nil}
+			} else {
+				event = DataUpdatedEvent{Data: updatedData}
 			}
 
-			return wrap(aggregateID, b.Sequence+1, events...)
+			return wrap(aggregateID, b.Sequence+1, event)
 		},
 	}
 }
@@ -139,7 +138,6 @@ func UpdateTagsCommand(aggregateID ID, tagsToAddOrUpdate Tags, tagsToDelete []st
 					events = append(events, TagsAddedEvent(tagsToAdd))
 				}
 			}
-
 			return wrap(aggregateID, b.Sequence+1, events...)
 		},
 	}
@@ -150,12 +148,15 @@ func DeleteCommand(aggregateID ID) Command {
 		ID:          aggregateID,
 		commandType: "DELETE",
 		validator: func(b Blob) error {
-			return validateID(b.ID, aggregateID)
+			if err := validateID(b.ID, aggregateID); err != nil {
+				return err
+			}
+			if b.Deleted {
+				return commandError("cannot delete an already deleted blob")
+			}
+			return nil
 		},
 		eventGenerator: func(b Blob) EventWithMetadataSlice {
-			if b.Deleted {
-				return nil
-			}
 			return wrap(aggregateID, b.Sequence+1, DeletedEvent{})
 		},
 	}

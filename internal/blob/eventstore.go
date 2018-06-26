@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/boltdb/bolt"
+
 	"github.com/pkg/errors"
 )
 
@@ -135,7 +137,7 @@ func (l *LocalFileSystemEventStore) Persist(ctx context.Context, id ID, events E
 	for _, event := range events {
 		data, err := marshal(event)
 		if err != nil {
-			return errors.Wrapf(err, "cannot marshal event to persist %v", event)
+			return errors.Wrapf(err, "cannot marshal event %v for persisting", event)
 		}
 		err = ioutil.WriteFile(path.Join(dirPath, strconv.FormatUint(event.Sequence, 10)), data, 0755)
 		if err != nil {
@@ -202,4 +204,55 @@ type persistableEvent struct {
 	Sequence       uint64          `json:"sequence"`
 	EventType      string          `json:"eventType"`
 	MarshaledEvent json.RawMessage `json:"marshaledEvent"`
+}
+
+type BoltDBEventStore struct {
+	db *bolt.DB
+}
+
+var _ EventStore = &BoltDBEventStore{}
+
+func NewBoltDBEventStore(storePath string) *BoltDBEventStore {
+	db, err := bolt.Open(storePath, 0755, nil)
+	if err != nil {
+		panic(err)
+	}
+	return &BoltDBEventStore{db}
+}
+
+func (b *BoltDBEventStore) Find(ctx context.Context, id ID) (events EventWithMetadataSlice, err error) {
+	err = b.db.View(func(tx *bolt.Tx) error {
+		bkt := tx.Bucket([]byte(id))
+		if bkt == nil {
+			return eventStoreError{isMissingAggregate: true, error: fmt.Errorf("cannot find events bucket for id %v in eventstore", id)}
+		}
+		return bkt.ForEach(func(_ []byte, value []byte) error {
+			event, err := unmarshal(value)
+			if err != nil {
+				return err
+			}
+			events = append(events, event)
+			return nil
+		})
+	})
+	return events, err
+}
+
+func (b *BoltDBEventStore) Persist(ctx context.Context, id ID, events EventWithMetadataSlice) error {
+	return b.db.Update(func(tx *bolt.Tx) error {
+		bkt, err := tx.CreateBucketIfNotExists([]byte(id))
+		if err != nil {
+			return errors.Wrapf(err, "cannot create bucket for %s", id)
+		}
+		for _, event := range events {
+			eventBytes, err := marshal(event)
+			if err != nil {
+				return errors.Wrapf(err, "cannot marshal event %v for persisting", event)
+			}
+			if err := bkt.Put([]byte(strconv.FormatUint(event.Sequence, 10)), eventBytes); err != nil {
+				return errors.Wrapf(err, "failed to persist event %v", event)
+			}
+		}
+		return nil
+	})
 }

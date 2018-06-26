@@ -24,7 +24,7 @@ func main() {
 	logger := &plog.StdLibLogger{Level: plog.Info, Logger: log.New(os.Stderr, "", log.LstdFlags)}
 
 	hdlrRegs := []handlers.HandlerRegisterer{
-		handlers.NewBlobHandler(logger, blob.NewAggregateRepository(blob.NewLocalFileSystemEventStore(*eventStoreFilePath))),
+		handlers.NewBlobHandler(logger, blob.NewAggregateRepository(blob.NewBoltDBEventStore(*eventStoreFilePath))),
 	}
 
 	muxRouter := mux.NewRouter()

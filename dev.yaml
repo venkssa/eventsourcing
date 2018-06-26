@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: eventsourcing
+  labels:
+    app: eventsourcing
+spec:
+  type: NodePort
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: eventsourcing
+  selector:
+    app: eventsourcing
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eventsourcing
+  labels:
+    app: eventsourcing
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: eventsourcing
+  template:
+    metadata:
+      labels:
+        app: eventsourcing
+    spec:
+      containers:
+      - name: eventsourcing
+        image: venkssa/eventsourcing:0.1
+        ports:
+        - containerPort: 8080

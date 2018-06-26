@@ -54,9 +54,9 @@ func Ok(rw http.ResponseWriter, contentType string, data io.Reader) error {
 	return nil
 }
 
-func OkJSON(rw http.ResponseWriter, v interface{}) error {
+func OkJSON(rw http.ResponseWriter, responseToEncodeAsJSON interface{}) error {
 	buf := new(bytes.Buffer)
-	if err := json.NewEncoder(buf).Encode(v); err != nil {
+	if err := json.NewEncoder(buf).Encode(responseToEncodeAsJSON); err != nil {
 		return internalServerError(err)
 	}
 	return Ok(rw, "application/json", buf)
