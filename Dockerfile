@@ -1,4 +1,4 @@
-FROM alpine:3.5
+FROM alpine:3.7
 
 COPY bin/eventsourcing /usr/local/eventsourcing
 

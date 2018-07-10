@@ -3,7 +3,9 @@ package main
 import (
 	_ "expvar"
 	"flag"
+	"fmt"
 	"log"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -32,6 +34,16 @@ func main() {
 		hdlrReg.Register(muxRouter)
 	}
 	muxRouter.NotFoundHandler = handlers.NotFoundHandler(logger)
+
+	muxRouter.HandleFunc("/ip", func(rw http.ResponseWriter, r *http.Request) {
+		host, _ := os.Hostname()
+		addrs, _ := net.LookupIP(host)
+		for _, addr := range addrs {
+			if ipv4 := addr.To4(); ipv4 != nil {
+				fmt.Fprintln(rw, "IPv4: ", ipv4)
+			}
+		}
+	})
 
 	wg := new(sync.WaitGroup)
 	wg.Add(2)

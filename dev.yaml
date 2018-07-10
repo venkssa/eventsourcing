@@ -5,12 +5,16 @@ metadata:
   labels:
     app: eventsourcing
 spec:
-  type: NodePort
+  type: LoadBalancer
   ports:
-    - port: 8080
+    - port: 80
       targetPort: 8080
-      protocol: TCP
+      protocol: TCP 
       name: eventsourcing
+    - port: 8081
+      targetPort: 8081
+      protocol: TCP
+      name: eventsourcing-admin
   selector:
     app: eventsourcing
 ---
@@ -32,6 +36,7 @@ spec:
     spec:
       containers:
       - name: eventsourcing
-        image: venkssa/eventsourcing:0.1
+        image: venkssa/eventsourcing:0.1.1
         ports:
         - containerPort: 8080
+        - containerPort: 8081
